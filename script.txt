@@ -1,0 +1,137 @@
+CREATE TABLE IF NOT EXISTS sales_facts (
+    id SERIAL PRIMARY KEY,
+    date_id INT,
+    product_id INT,
+    region_id INT,
+    sales_amount NUMERIC,
+    quantity INT
+);
+
+CREATE TABLE IF NOT EXISTS dim_date (
+    id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    year INT,
+    month INT,
+    day INT
+);
+
+CREATE TABLE IF NOT EXISTS dim_product (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS dim_region (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role VARCHAR(20) DEFAULT 'analyst'
+);
+
+-- Regiones
+INSERT INTO dim_region (name) VALUES
+('North'), ('South'), ('East'), ('West');
+
+-- Productos
+INSERT INTO dim_product (name) VALUES
+('Laptop'),
+('Smartphone'),
+('Smart TV'),
+('Bocina Bluetooth'),
+('Cargador USB'),
+('Cable HDMI'),
+('Audifonos'),
+('Camara Web');
+
+DO $$
+DECLARE
+    d DATE := '2020-01-01';
+BEGIN
+    WHILE d <= '2024-12-31' LOOP
+        INSERT INTO dim_date (date, year, month, day)
+        VALUES (d, EXTRACT(YEAR FROM d), EXTRACT(MONTH FROM d), EXTRACT(DAY FROM d));
+        d := d + INTERVAL '1 day';
+    END LOOP;
+END$$;
+
+INSERT INTO users (username, password, role) VALUES
+('admin', 'admin123', 'admin'),
+('analyst', 'analyst123', 'analyst');
+
+DO $$
+DECLARE
+    d RECORD;
+    p RECORD;
+    r RECORD;
+    base_sales NUMERIC;
+    qty INT;
+    product_trend_factor NUMERIC;
+    weekend_factor NUMERIC;
+    month_factor NUMERIC;
+    region_factor NUMERIC;
+BEGIN
+    FOR d IN SELECT * FROM dim_date WHERE date BETWEEN '2020-01-01' AND '2024-12-31' LOOP
+        FOR p IN SELECT * FROM dim_product LOOP
+            -- Tendencias de producto
+            IF p.name = 'Laptop' THEN
+                product_trend_factor := 1 + 0.12 * (EXTRACT(YEAR FROM d.date) - 2020);
+            ELSIF p.name = 'Smartphone' THEN
+                product_trend_factor := 1 + 0.09 * (EXTRACT(YEAR FROM d.date) - 2020);
+            ELSIF p.name = 'Smart TV' THEN
+                product_trend_factor := 1 + 0.05 * (EXTRACT(YEAR FROM d.date) - 2020);
+            ELSIF p.name = 'Bocina Bluetooth' THEN
+                product_trend_factor := 1 - 0.05 * (EXTRACT(YEAR FROM d.date) - 2020);
+            ELSE
+                product_trend_factor := 1;
+            END IF;
+
+            FOR r IN SELECT * FROM dim_region LOOP
+                -- Región Norte dominante, Sur débil
+                IF r.name = 'North' THEN
+                    region_factor := 1.5;
+                ELSIF r.name = 'South' THEN
+                    region_factor := 0.7;
+                ELSE
+                    region_factor := 1;
+                END IF;
+
+                -- Meses pico: Diciembre y Junio
+                IF EXTRACT(MONTH FROM d.date) = 12 THEN
+                    month_factor := 1.7;
+                ELSIF EXTRACT(MONTH FROM d.date) = 6 THEN
+                    month_factor := 1.35;
+                ELSE
+                    month_factor := 1;
+                END IF;
+
+                -- Fines de semana
+                IF EXTRACT(DOW FROM d.date) IN (0, 6) THEN
+                    weekend_factor := 1.4;
+                ELSE
+                    weekend_factor := 1;
+                END IF;
+
+                -- Generar venta base con conversión correcta
+                base_sales := ROUND(
+                    ((RANDOM() * 800 + 200) * product_trend_factor * region_factor * month_factor * weekend_factor)::numeric,
+                2);
+
+                qty := FLOOR(RANDOM() * 7 * month_factor * weekend_factor * product_trend_factor) + 1;
+
+                IF base_sales < 90 THEN
+                    base_sales := 90 + (RANDOM() * 40);
+                END IF;
+                IF qty < 1 THEN
+                    qty := 1;
+                END IF;
+
+                INSERT INTO sales_facts (date_id, product_id, region_id, sales_amount, quantity)
+                VALUES (d.id, p.id, r.id, base_sales, qty);
+            END LOOP;
+        END LOOP;
+    END LOOP;
+END$$;

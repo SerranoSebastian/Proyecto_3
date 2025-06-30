@@ -1,0 +1,23 @@
+# Node
+node_modules/
+.env
+logs/
+*.log
+
+# Build
+dist/
+build/
+coverage/
+
+# Editor
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# OS
+*.bak
+*.tmp
+*.swp
